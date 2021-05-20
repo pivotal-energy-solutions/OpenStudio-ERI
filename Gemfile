@@ -1,7 +1,7 @@
 source 'http://rubygems.org'
 
 gem 'rake', '~> 11.2.2'
-gem 'nokogiri', '~> 1.6', '<= 1.6.8.1'
+gem 'nokogiri', '~> 1.11'
 
 # uncomment if you need to update the bcl measures
 gem "bcl", "~> 0.5.7"
