@@ -5,6 +5,7 @@
 module Airflow
   # Constants
   InfilPressureExponent = 0.65
+  DuctLeakagePressureExponent = 0.6 # ASHRAE 152-2004; set to 0.5 for constant leakage fraction (legacy)
   AssumedInsideTemp = 73.5 # (F)
   Gravity = 32.174 # acceleration of gravity (ft/s2)
   UnventedSpaceACH = 0.1 # natural air changes per hour, assumption
@@ -1462,22 +1463,57 @@ module Airflow
     duct_subroutine.addLine('  Set h_DZ = (@HFnTdbW DZ_T DZ_W)') # J/kg
     duct_subroutine.addLine('  Set air_cp = 1006.0') # J/kg-C
 
+    # Duct leakage calculation
+    # For CFM25 inputs: use power law with DuctLeakagePressureExponent per ASHRAE 152-2004
+    # Q_leak = CFM25 * (Q_operating / Q_design)^(2*n), where n is pressure exponent
+    # For leakage fraction inputs: use linear scaling (legacy approach)
+    duct_lk_exponent = 2.0 * DuctLeakagePressureExponent
+    duct_subroutine.addLine("  Set max_mfr = #{fan_data[:mfr_max_var][object].name}/#{unit_multiplier}") # kg/s
+    duct_subroutine.addLine("  Set airflow_ratio = AH_MFR / max_mfr")
+
+    # Calculate supply duct leakage
     if not leakage_fracs[HPXML::DuctTypeSupply].nil?
+      # Leakage fraction specified directly - use linear scaling
       duct_subroutine.addLine("  Set f_sup = #{leakage_fracs[HPXML::DuctTypeSupply]}") # frac
+      duct_subroutine.addLine('  Set sup_lk_mfr = f_sup * AH_MFR') # kg/s
     elsif not leakage_cfm25s[HPXML::DuctTypeSupply].nil?
-      duct_subroutine.addLine("  Set f_sup = #{UnitConversions.convert(leakage_cfm25s[HPXML::DuctTypeSupply], 'cfm', 'm^3/s').round(6)} / (#{fan_data[:mfr_max_var][object].name}/#{unit_multiplier} * 1.0135)") # frac
+      # CFM25 specified - use power law per ASHRAE 152-2004
+      # Q_leak = CFM25 * (Q_operating / Q_design)^(2*n)
+      cfm25_sup_m3s = UnitConversions.convert(leakage_cfm25s[HPXML::DuctTypeSupply], 'cfm', 'm^3/s').round(6)
+      # f_sup is the design leakage fraction (used for imbalance calculation)
+      duct_subroutine.addLine("  Set f_sup = #{cfm25_sup_m3s} / (max_mfr * 1.0135)") # frac
+      # sup_lk_mfr uses power law: CFM25 * airflow_ratio^(2*n) / density_correction
+      duct_subroutine.addLine("  If airflow_ratio > 0.001")
+      duct_subroutine.addLine("    Set sup_lk_mfr = #{cfm25_sup_m3s} * (@Exp (#{duct_lk_exponent} * (@Ln airflow_ratio))) / 1.0135") # kg/s
+      duct_subroutine.addLine("  Else")
+      duct_subroutine.addLine("    Set sup_lk_mfr = 0.0") # kg/s
+      duct_subroutine.addLine("  EndIf")
     else
       duct_subroutine.addLine('  Set f_sup = 0.0') # frac
+      duct_subroutine.addLine('  Set sup_lk_mfr = 0.0') # kg/s
     end
+
+    # Calculate return duct leakage
     if not leakage_fracs[HPXML::DuctTypeReturn].nil?
+      # Leakage fraction specified directly - use linear scaling
       duct_subroutine.addLine("  Set f_ret = #{leakage_fracs[HPXML::DuctTypeReturn]}") # frac
+      duct_subroutine.addLine('  Set ret_lk_mfr = f_ret * AH_MFR') # kg/s
     elsif not leakage_cfm25s[HPXML::DuctTypeReturn].nil?
-      duct_subroutine.addLine("  Set f_ret = #{UnitConversions.convert(leakage_cfm25s[HPXML::DuctTypeReturn], 'cfm', 'm^3/s').round(6)} / (#{fan_data[:mfr_max_var][object].name}/#{unit_multiplier} * 1.0135)") # frac
+      # CFM25 specified - use power law per ASHRAE 152-2004
+      # Q_leak = CFM25 * (Q_operating / Q_design)^(2*n)
+      cfm25_ret_m3s = UnitConversions.convert(leakage_cfm25s[HPXML::DuctTypeReturn], 'cfm', 'm^3/s').round(6)
+      # f_ret is the design leakage fraction (used for imbalance calculation)
+      duct_subroutine.addLine("  Set f_ret = #{cfm25_ret_m3s} / (max_mfr * 1.0135)") # frac
+      # ret_lk_mfr uses power law: CFM25 * airflow_ratio^(2*n) / density_correction
+      duct_subroutine.addLine("  If airflow_ratio > 0.001")
+      duct_subroutine.addLine("    Set ret_lk_mfr = #{cfm25_ret_m3s} * (@Exp (#{duct_lk_exponent} * (@Ln airflow_ratio))) / 1.0135") # kg/s
+      duct_subroutine.addLine("  Else")
+      duct_subroutine.addLine("    Set ret_lk_mfr = 0.0") # kg/s
+      duct_subroutine.addLine("  EndIf")
     else
       duct_subroutine.addLine('  Set f_ret = 0.0') # frac
+      duct_subroutine.addLine('  Set ret_lk_mfr = 0.0') # kg/s
     end
-    duct_subroutine.addLine('  Set sup_lk_mfr = f_sup * AH_MFR') # kg/s
-    duct_subroutine.addLine('  Set ret_lk_mfr = f_ret * AH_MFR') # kg/s
 
     # Supply leakage to conditioned space
     duct_subroutine.addLine('  Set SupTotLkToCond = sup_lk_mfr*(h_RA - h_SA)') # W
