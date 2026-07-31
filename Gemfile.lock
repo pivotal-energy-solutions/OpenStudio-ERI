@@ -1,10 +1,16 @@
 GEM
   remote: http://rubygems.org/
   specs:
+    addressable (2.9.0)
+      public_suffix (>= 2.0.2, < 8.0)
     ansi (1.5.0)
     ast (2.4.2)
+    bigdecimal (4.1.2)
     builder (3.2.4)
     docile (1.4.0)
+    json-schema (6.2.0)
+      addressable (~> 2.8)
+      bigdecimal (>= 3.1, < 5)
     matrix (0.4.2)
     minitest (5.15.0)
     minitest-reporters (1.5.0)
@@ -12,11 +18,12 @@ GEM
       builder
       minitest (>= 5.0)
       ruby-progressbar
-    msgpack (1.5.1)
+    msgpack (1.8.2)
     oga (3.3)
       ast
       ruby-ll (~> 2.1)
     parallel (1.24.0)
+    public_suffix (7.0.5)
     rake (13.0.6)
     ruby-ll (2.1.2)
       ansi
@@ -31,9 +38,9 @@ GEM
     simplecov_json_formatter (0.1.4)
 
 PLATFORMS
-  ruby
 
 DEPENDENCIES
+  json-schema
   matrix
   minitest (~> 5.9)
   minitest-reporters
